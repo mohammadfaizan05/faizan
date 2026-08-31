@@ -1,0 +1,36 @@
+{
+  "transactions": [],
+  "customers": [],
+  "cashDrawer": {
+    "id": "DRAWER-2026-08-31",
+    "date": "2026-08-31",
+    "time": "09:00:00 AM",
+    "openingCash": 0,
+    "notes500": 0,
+    "notes200": 0,
+    "notes100": 0,
+    "notes50": 0,
+    "notes20": 0,
+    "notes10": 0,
+    "coinsTotal": 0,
+    "totalPhysicalCash": 0,
+    "digitalLedgerCash": 0,
+    "discrepancy": 0,
+    "notes": "Cash drawer initialized",
+    "verifiedBy": "Mohammad Faizan",
+    "verifiedAt": "2026-08-31 09:00 AM"
+  },
+  "expenses": [],
+  "auditLogs": [
+    {
+      "id": "AUD-0001",
+      "timestamp": 1788173000000,
+      "dateStr": "31/08/2026, 09:00:00 am",
+      "ip": "127.0.0.1",
+      "action": "SYSTEM_INITIALIZED",
+      "details": "Store ledger started with clean slate for live operations",
+      "severity": "SUCCESS",
+      "user": "Mohammad Faizan"
+    }
+  ]
+}
