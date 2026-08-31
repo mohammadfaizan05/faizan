@@ -8,7 +8,7 @@ import { createServer as createViteServer } from 'vite';
 
 dotenv.config();
 
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const HOST = '0.0.0.0';
 
 // Master credentials & profile
@@ -132,10 +132,11 @@ function logAudit(action: string, details: string, severity: 'INFO' | 'SUCCESS' 
   console.log(`[AUDIT LOG] ${severity} | ${action} | ${details}`);
 }
 
-// Nodemailer setup for Real Gmail OTP
+// Nodemailer setup for Real Gmail OTP with dual fallback (Port 587 STARTTLS & Port 465 SSL)
 async function sendGmailOtp(otp: string, targetEmail: string): Promise<{ success: boolean; message: string; isRealSmtp: boolean }> {
-  const gmailUser = process.env.GMAIL_USER || 'faizantaj9045@gmail.com';
-  const gmailPassword = process.env.GMAIL_APP_PASSWORD;
+  const gmailUser = (process.env.GMAIL_USER || 'faizantaj9045@gmail.com').trim();
+  const rawPassword = process.env.GMAIL_APP_PASSWORD || '';
+  const gmailPassword = rawPassword.replace(/\s+/g, ''); // Strip any accidental spaces from 16-digit Google App Password
 
   const htmlContent = `
   <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 580px; margin: 0 auto; background: #0f172a; color: #f8fafc; border-radius: 12px; overflow: hidden; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
@@ -191,17 +192,35 @@ async function sendGmailOtp(otp: string, targetEmail: string): Promise<{ success
   </div>
   `;
 
-  if (gmailPassword && gmailPassword.trim().length > 0) {
+  // Always log OTP with high-visibility banner to server console (Render Live Logs)
+  console.log('\n================================================================');
+  console.log('  🏛️  MOHAMMAD FAIZAN JAN SEVA KENDRA - 2FA LOGIN OTP  🏛️');
+  console.log('  --------------------------------------------------------------');
+  console.log(`  📧 RECIPIENT EMAIL : ${targetEmail}`);
+  console.log(`  🔑 6-DIGIT OTP     : >>> [ ${otp} ] <<<`);
+  console.log('  ⏳ VALIDITY        : 5 MINUTES');
+  console.log('================================================================\n');
+
+  if (gmailPassword && gmailPassword.length > 0) {
+    // Attempt 1: Port 587 with STARTTLS (Preferred for Render/Cloud containers)
     try {
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
+      const transporter587 = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false, // STARTTLS
         auth: {
           user: gmailUser,
-          pass: gmailPassword.trim(),
+          pass: gmailPassword,
+        },
+        connectionTimeout: 7000,
+        greetingTimeout: 7000,
+        socketTimeout: 10000,
+        tls: {
+          rejectUnauthorized: false,
         },
       });
 
-      await transporter.sendMail({
+      await transporter587.sendMail({
         from: `"Jan Seva Kendra Security" <${gmailUser}>`,
         to: targetEmail,
         subject: `🔐 2FA OTP Code: ${otp} - Mohammad Faizan Jan Seva Kendra`,
@@ -209,27 +228,53 @@ async function sendGmailOtp(otp: string, targetEmail: string): Promise<{ success
         html: htmlContent,
       });
 
-      console.log(`[SMTP SUCCESS] Real Gmail OTP sent to ${targetEmail}`);
+      console.log(`[SMTP SUCCESS] Real Gmail OTP delivered via Port 587 to ${targetEmail}`);
       return { success: true, message: `OTP sent successfully to ${targetEmail}`, isRealSmtp: true };
-    } catch (err: any) {
-      console.error('[SMTP ERROR] Failed to send email via Gmail SMTP:', err.message);
-      return {
-        success: false,
-        message: `Gmail SMTP Error: ${err.message}. (Please ensure a valid 16-character Google App Password is set in GMAIL_APP_PASSWORD).`,
-        isRealSmtp: false,
-      };
+    } catch (err587: any) {
+      console.warn('[SMTP WARNING] Port 587 failed, attempting Port 465 SSL fallback:', err587.message);
+
+      // Attempt 2: Port 465 with direct SSL
+      try {
+        const transporter465 = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: 465,
+          secure: true,
+          auth: {
+            user: gmailUser,
+            pass: gmailPassword,
+          },
+          connectionTimeout: 7000,
+          greetingTimeout: 7000,
+          socketTimeout: 10000,
+          tls: {
+            rejectUnauthorized: false,
+          },
+        });
+
+        await transporter465.sendMail({
+          from: `"Jan Seva Kendra Security" <${gmailUser}>`,
+          to: targetEmail,
+          subject: `🔐 2FA OTP Code: ${otp} - Mohammad Faizan Jan Seva Kendra`,
+          text: `Your 2-Step Login OTP for Mohammad Faizan Jan Seva Kendra is: ${otp}. Valid for 5 minutes.`,
+          html: htmlContent,
+        });
+
+        console.log(`[SMTP SUCCESS] Real Gmail OTP delivered via Port 465 to ${targetEmail}`);
+        return { success: true, message: `OTP sent successfully to ${targetEmail}`, isRealSmtp: true };
+      } catch (err465: any) {
+        console.error('[SMTP ERROR] Both Port 587 & 465 failed on Render:', err465.message);
+        return {
+          success: false,
+          message: `Gmail SMTP Connection Timeout. (Please check Render Live Logs for OTP code [${otp}]).`,
+          isRealSmtp: false,
+        };
+      }
     }
   } else {
-    // If GMAIL_APP_PASSWORD is not provided in .env, log securely to terminal
-    console.log('===============================================================');
-    console.log(`[2FA OTP DISPATCH] Real Gmail recipient: ${targetEmail}`);
-    console.log(`[2FA OTP CODE] >>> ${otp} <<< (5-minute validity)`);
-    console.log(`[INFO] To send actual emails directly to inbox, configure GMAIL_APP_PASSWORD in settings.`);
-    console.log('===============================================================');
-
+    console.log(`[INFO] GMAIL_APP_PASSWORD is not set in environment. Use the OTP code logged above.`);
     return {
       success: true,
-      message: `OTP generated and dispatched for ${targetEmail}. (App password pending in env).`,
+      message: `OTP generated for ${targetEmail}. Use the OTP code shown in Render Live Logs.`,
       isRealSmtp: false,
     };
   }
